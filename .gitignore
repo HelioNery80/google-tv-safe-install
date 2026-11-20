@@ -1,0 +1,5 @@
+launcher/build/
+launcher/debug.keystore
+launcher/res/drawable-mdpi/ic_launcher.png
+*.keystore
+*.ab
