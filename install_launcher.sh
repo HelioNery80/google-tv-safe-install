@@ -202,18 +202,29 @@ set_default_launcher() {
     header "DEFININDO COMO LAUNCHER PADRÃO"
     
     log "Definindo $LAUNCHER_PACKAGE como home..."
-    
-    if adb -s "$TV_IP:$TV_PORT" shell cmd package set-home-user-as-default "$LAUNCHER_PACKAGE"; then
-        success "Launcher definido como padrão!"
-        return 0
-    else
-        warning "Pode ser necessário fazer manualmente na TV"
-        echo ""
-        echo "Na TV, faça:"
-        echo "  Menu → Configurações → Apps → Padrão → Launcher"
-        echo "  Selecione: $(echo $LAUNCHER_PACKAGE | cut -d. -f3)"
-        return 1
+
+    # 'cmd package' só existe a partir do Android 7 (API 24). No Android 4.2
+    # da JVC LT-55NU40B o comando não existe e o 'adb shell' antigo não
+    # devolve código de erro, então o resultado é lido pelo texto.
+    local sdk
+    sdk=$(adb -s "$TV_IP:$TV_PORT" shell getprop ro.build.version.sdk | tr -d '\r')
+    if [ "${sdk:-0}" -ge 24 ] 2>/dev/null; then
+        local out
+        out=$(adb -s "$TV_IP:$TV_PORT" shell cmd package set-home-user-as-default "$LAUNCHER_PACKAGE" 2>&1 | tr -d '\r')
+        if [ -z "$out" ] || echo "$out" | grep -qi success; then
+            success "Launcher definido como padrão!"
+            return 0
+        fi
     fi
+
+    warning "Nesta TV (Android API ${sdk:-?}) a escolha é feita no controle remoto:"
+    echo ""
+    echo "  1. Aperte o botão HOME do controle"
+    echo "  2. Na janela 'Concluir ação usando', escolha o launcher novo"
+    echo "  3. Escolha 'Sempre'"
+    echo ""
+    echo "  Para voltar ao launcher original: desinstale o novo (opção 4 do menu)."
+    return 0
 }
 
 ###############################################################################
@@ -234,10 +245,12 @@ uninstall_app() {
     
     log "Desinstalando $package_name..."
     
-    if adb -s "$TV_IP:$TV_PORT" shell pm uninstall --user 0 "$package_name"; then
+    # Desinstalação normal (funciona do Android 4.2 em diante para apps instalados por você).
+    # O 'adb shell' antigo não devolve código de erro: conferimos o texto "Success".
+    if adb -s "$TV_IP:$TV_PORT" shell pm uninstall "$package_name" | tr -d '\r' | grep -q Success; then
         success "Aplicativo desinstalado!"
     else
-        error "Falha ao desinstalar"
+        error "Falha ao desinstalar (apps do sistema não podem ser removidos assim)"
     fi
 }
 
@@ -290,7 +303,7 @@ optimize_tv() {
     adb -s "$TV_IP:$TV_PORT" shell settings put global animator_duration_scale 0.5
     
     log "Otimizando transições..."
-    adb -s "$TV_IP:$TV_PORT" shell settings put secure transition_animation_scale 0.5
+    adb -s "$TV_IP:$TV_PORT" shell settings put global transition_animation_scale 0.5
     
     success "TV otimizada!"
 }
